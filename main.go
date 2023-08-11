@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+type headers = map[string]string;
+var status_separator string = " ";
+
 func main() {
     address := ":5000"
     if len(os.Args) > 1 {
@@ -18,76 +21,85 @@ func main() {
 }
 
 func start_server(address string) {
-    fmt.Printf("Starting server...\n")
+    fmt.Printf("Starting server...\n");
 
-    listener, err := net.Listen("tcp", address)
+    listener, err := net.Listen("tcp", address);
     if err != nil {
-        fmt.Printf("Error while launching server: %s\n", err.Error())
-        return
+        fmt.Printf("Error while launching server: %s\n", err.Error());
+        return;
     }
 
-    fmt.Printf("Server listening on %s!\n", listener.Addr().String())
+    fmt.Printf("Server listening on %s!\n", listener.Addr().String());
 
     for {
         //fmt.Printf("Waiting for connection from client...\n")
-        conn, err := listener.Accept()
+        conn, err := listener.Accept();
         if err != nil {
-            fmt.Printf("Error accepting new connection: %s\n", err.Error())
-            return
+            fmt.Printf("Error accepting new connection: %s\n", err.Error());
+            return;
         }
 
         //fmt.Printf("Client connected!\n")
 
-        headers, err := receive_data(conn)
+        headers, err := receive_request(conn);
         if err != nil {
-            fmt.Printf("Error receiving data from client: %s", err.Error())
-            continue
+            fmt.Printf("Error receiving data from client: %s", err.Error());
+            continue;
         }
-        fmt.Printf("%s\n", headers["Status"])
+        fmt.Printf("%s\n", headers["Status"]);
 
-        err = send_data(conn)
+        var html string = create_html(headers["Route"]);
+        var response []byte = create_response(html);
+        err = send_response(response, conn);
         if err != nil {
-            fmt.Printf("Error sending data to client: %s", err.Error())
-            continue
+            fmt.Printf("Error sending data to client: %s", err.Error());
+            continue;
         }
     }
 }
 
-func receive_data(conn net.Conn) (map[string]string, error) {
-    //fmt.Printf("Receiving data from client...\n")
-    buffer := make([]byte, 1024)
-    read, err := conn.Read(buffer)
+func receive_request(conn net.Conn) (headers, error) {
+    buffer := make([]byte, 1024);
+    read, err := conn.Read(buffer);
     if err != nil {
-        return nil, err
+        return nil, err;
     }
-    data := string(buffer[:read])
-    lines := strings.Split(data, "\n")
-    headers := make(map[string]string)
+    data := string(buffer[:read]);
+    lines := strings.Split(data, "\n");
+    headers := make(headers);
 
-    headers["Status"] = lines[0]
+    var status string = lines[0];
+    var splitted_status []string = strings.Split(status, status_separator);
+
+    headers["Method"] = splitted_status[0];
+    headers["Route"] = splitted_status[1];
     for _, line := range lines[1:] {
-        split_index := strings.Index(line, ":")
+        split_index := strings.Index(line, ":");
         if split_index != -1 {
-            headers[line[:split_index]] = line[split_index+1:]
+            headers[line[:split_index]] = line[split_index+1:];
         }
     }
-    return headers, nil
+    return headers, nil;
 }
 
-func send_data(conn net.Conn) error {
+func send_response(data []byte, conn net.Conn) error {
     //fmt.Printf("Sending data to client...\n")
 
-    //html := "<!DOCTYPE html><html lang=\"ru\"><head><meta charset=\"UTF-8\"><title>Test</title></head><body>Ку, Андрюх!</body></html>"
-    html := "Ку, Андрюх!"
-    response := create_response(html)
-
-    _, err := conn.Write([]byte(response))
+    _, err := conn.Write(data)
     conn.Close()
     if err != nil {
         return err
     }
     //fmt.Printf("Sent data to client!\n")
     return nil
+}
+
+func create_html(route string) string {
+    var template string = "<!DOCTYPE html><html lang=\"ru\"><head><meta charset=\"UTF-8\"><title>%s</title></head><body>%s</body></html>\n";
+    var title string = "Test server";
+    var body string = route;
+    var html string = fmt.Sprintf(template, title, body);
+    return html;
 }
 
 func create_response(html string) []byte {
