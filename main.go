@@ -49,7 +49,10 @@ func start_server(address string) {
         fmt.Printf("%s\n", headers["Status"]);
 
         var html string = create_html(headers["Route"]);
-        var response []byte = create_response(html);
+        var response_data response_data = create_response_data();
+        response_data = set_html(response_data, html);
+
+        var response []byte = create_response(response_data);
         err = send_response(response, conn);
         if err != nil {
             fmt.Printf("Error sending data to client: %s", err.Error());
@@ -83,14 +86,11 @@ func receive_request(conn net.Conn) (headers, error) {
 }
 
 func send_response(data []byte, conn net.Conn) error {
-    //fmt.Printf("Sending data to client...\n")
-
     _, err := conn.Write(data)
     conn.Close()
     if err != nil {
         return err
     }
-    //fmt.Printf("Sent data to client!\n")
     return nil
 }
 
@@ -102,18 +102,57 @@ func create_html(route string) string {
     return html;
 }
 
-func create_response(html string) []byte {
-    status := "HTTP/1.1 200 OK\n"
-    date := "Date: " + time.Now().Format("Wed, 11 Feb 2009 11:20:59 GMT") + "\n"
-    server := "Server: Custom\n"
-    last_modified := "Last-Modified: " + time.Now().Format("Wed, 11 Feb 2009 11:20:59 GMT") + "\n"
-    content_language := "Content-Language: ru\n"
-    content_type := "Content-Type: text/html; charset=utf-8\n"
-    content_length := "Content-Length: " + string(len(html)) + "\n"
-    connection := "Connection: close\n"
-    headers := status + date + server + last_modified + content_language + content_type + content_length + connection
+type response_data struct {
+    status string
+    date time.Time
+    server string
+    last_modified time.Time
+    content_language string
+    content_type string
+    content_length int
+    connection string
+    html string
+}
 
-    response := headers + "\n" + html
+func set_html(data response_data, html string) response_data {
+    data.html = html;
+    data.content_length = len(html);
+    return data
+}
 
+func create_response_data() response_data {
+    var data response_data = response_data {
+        status: "HTTP/1.1 200 OK\n",
+        date: time.Now(),
+        server: "Server: Custom\n",
+        last_modified: time.Now(),
+        content_language: "Content-Language: ru\n",
+        content_type: "Content-Type: text/html; charset=utf-8\n",
+        content_length: 0,
+        connection: "Connection: close\n",
+        html: "",
+    };
+    return data
+}
+
+var date_format string = "Mon, 2 Jan 2006 15:04:05 GMT";
+
+func create_response(data response_data) []byte {
+
+    date := fmt.Sprintf("Date: %s\n", data.date.Format(date_format));
+    content_length := fmt.Sprintf("Content-Length: %d\n", data.content_length);
+    last_modified := fmt.Sprintf("Last-Modified: %s\n", data.last_modified.Format(date_format));
+    response := fmt.Sprintf("%s%s%s%s%s%s%s%s\n%s\n",
+                  data.status,
+                  date,
+                  data.server,
+                  last_modified,
+                  data.content_language,
+                  data.content_type,
+                  content_length,
+                  data.connection,
+                  data.html);
+
+    fmt.Println(response);
     return []byte(response)
 }
