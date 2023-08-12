@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -32,14 +33,11 @@ func start_server(address string) {
     fmt.Printf("Server listening on %s!\n", listener.Addr().String());
 
     for {
-        //fmt.Printf("Waiting for connection from client...\n")
         conn, err := listener.Accept();
         if err != nil {
             fmt.Printf("Error accepting new connection: %s\n", err.Error());
             return;
         }
-
-        //fmt.Printf("Client connected!\n")
 
         headers, err := receive_request(conn);
         if err != nil {
@@ -49,8 +47,7 @@ func start_server(address string) {
         fmt.Printf("%s\n", headers["Status"]);
 
         var html string = create_html(headers["Route"]);
-        var response_data response_data = create_response_data();
-        response_data = set_html(response_data, html);
+        var response_data response_data = create_response_data().set_html(html).set_status("200 OK");
 
         var response []byte = create_response(response_data);
         err = send_response(response, conn);
@@ -97,9 +94,85 @@ func send_response(data []byte, conn net.Conn) error {
 func create_html(route string) string {
     var template string = "<!DOCTYPE html><html lang=\"ru\"><head><meta charset=\"UTF-8\"><title>%s</title></head><body>%s</body></html>\n";
     var title string = "Test server";
-    var body string = route;
+    var handler handler = get_handler(route);
+    var body string = handler.get_body();
     var html string = fmt.Sprintf(template, title, body);
     return html;
+}
+
+type handler interface {
+    get_body() string
+}
+
+var (
+    route_index string = "/";
+    greeter_index string = "/greet";
+);
+
+
+func get_handler(route string) handler {
+    if(route == "/"){
+        return index{};
+    }
+    fmt.Printf("Route: %s\n", route);
+    if(string_starts_with(route, "/greet")){
+        rest, err := string_get_rest(route, "/greet")
+        if err != nil {
+            return server_error{error_message: err.Error()}
+        }
+
+        rest, err = string_get_rest(rest, "?");
+        if err != nil {
+            return server_error{error_message: "You did not specify your name!"}
+        }
+
+        name, err := string_get_rest(rest, "name=");
+        if err != nil {
+            return server_error{error_message: "You did not specify your name!"}
+        }
+
+        return greeter{name: name}
+    }
+
+    return not_found{};
+}
+
+func string_starts_with(source string, target string) bool {
+    var target_len int = len(target);
+    var source_len int = len(source);
+    return source_len >= target_len &&  source[0:target_len] == target;
+}
+
+func string_get_rest(route string, after string) (string, error) {
+    if(!string_starts_with(route, after)) {
+        return "", errors.New("Route doesn't start with specified string");
+    }
+    var target_len int = len(after);
+    return route[target_len:], nil
+}
+
+type greeter struct {
+    name string
+}
+func (data greeter) get_body() string {
+    return fmt.Sprintf("Hello, %s!\n", data.name);
+}
+
+type not_found struct {}
+func (_ not_found) get_body() string {
+    return "Page not found";
+}
+
+type server_error struct {
+    error_message string
+}
+func (data server_error) get_body() string {
+    return fmt.Sprintf("Server error: %s\n", data.error_message);
+}
+
+type index struct {}
+func (_ index) get_body() string {
+    return "Index page";
 }
 
 type response_data struct {
@@ -114,10 +187,15 @@ type response_data struct {
     html string
 }
 
-func set_html(data response_data, html string) response_data {
+func (data response_data) set_html(html string) response_data {
     data.html = html;
     data.content_length = len(html);
     return data
+}
+
+func (data response_data) set_status(status string) response_data {
+    data.status = fmt.Sprintf("HTTP/1.1 %s\n", status);
+    return data;
 }
 
 func create_response_data() response_data {
